@@ -1,0 +1,134 @@
+close all; clearvars; clc;
+rng(0);
+
+%% Parameters
+T = 10;
+A = .1 * [1 1; 0 1];
+B = eye(2);
+C = eye(2);
+Q = eye(2);
+R = eye(2);
+n = 2; m = 2; p = 2;
+% nominal covariances
+X0h = random_psd_matrix(n, 1, 2);
+Wh = cell(T,1);
+Vh = cell(T,1);
+for t = 1:T
+    Wh{t} = random_psd_matrix(n, 1, 2);
+    Vh{t} = random_psd_matrix(n, 1, 2);
+end
+
+% preallocate
+H = zeros(n*(T+1), m*T);
+G = zeros(n*(T+1), n*(T+1));
+
+% fill strictly lower‐triangular blocks
+for i = 2:T+1 
+    for j = 1:(i-1)
+        power = i-j;
+        if power==1
+            Apow = A;
+        else
+            Apow = A^power;
+        end
+        row_idx = (i-1)*n + (1:n);
+        col_idx = (j-1)*m + (1:m);
+        H(row_idx, col_idx) = Apow * B;
+    end
+end
+
+for i = 0:T
+    for j = 0:i
+        block = A^(i-j);
+        rows = i*n + (1:n);
+        cols = j*n + (1:n);
+        G(rows,cols) = block;
+    end
+end
+
+rho = .1;
+
+%% Optimization program
+
+% Decision variables
+for t = 1:T+1
+    Wblocks{t} = sdpvar(n,n);
+end
+W = blkdiag(Wblocks{:});
+for t = 1:T
+    Vblocks{t} = sdpvar(p,p);
+end
+V  = blkdiag(Vblocks{:});
+% M is strictly upper‐block‐triangular with m×p blocks
+M  = sdpvar(m*T, p*T,'full');
+F  = sdpvar(m*T,m*T);
+Ex0 = sdpvar(n,n);
+Ew  = sdpvar(n,n,T);
+Ev  = sdpvar(p,p,T);
+
+%% Build the block‐diagonal pieces of W and V
+
+Fcon = [W  >= 0, V  >= 0, F  >= 0, Ex0 >= 0];
+
+for t = 1:T
+    Fcon = [Fcon, Ew(:,:,t) >= 0, Ev(:,:,t) >= 0];
+end
+
+Fcon = [Fcon, trace(W(1:n, 1:n) + X0h - 2*Ex0) <= rho^2 ];
+
+for t = 1:T
+  Fcon = [Fcon, trace(W(n*t+1:n*(t+1), n*t+1:n*(t+1)) + Wh{t} - 2*Ew(:,:,t)) <= rho^2, ...
+          trace(V(p*(t-1)+1:p*t, p*(t-1)+1:p*t) + Vh{t}  - 2*Ev(:,:,t)) <= rho^2 ];
+end
+
+Fcon = [Fcon, [sqrtm(X0h) * W(1:n, 1:n) * sqrtm(X0h), Ex0; Ex0, eye(n)] >= 0 ];
+
+for t=1:T
+  tmp1 = sqrtm(Wh{t});
+  tmp2 = sqrtm(Vh{t});
+  Fcon = [Fcon, [tmp1 * W(n*t+1:n*(t+1), n*t+1:n*(t+1)) * tmp1, Ew(:,:,t); Ew(:,:,t), eye(n)] >= 0];
+  Fcon = [Fcon, [tmp2 * V(p*(t-1)+1:p*t, p*(t-1)+1:p*t) * tmp2, Ev(:,:,t); Ev(:,:,t), eye(p)] >= 0];
+end
+
+% Upper triangular M
+for t = 1:T
+  for s = 1:t
+    Fcon = [Fcon, M((t-1)*m+1:t*m, (s-1)*p+1:s*p) == 0];
+  end
+end
+
+QT = kron(eye(T+1), Q);
+RT = kron(eye(T), R);
+CT = 
+
+Z = H' * QT * G * W * D' + M/2;
+X = D * W * D' + V;
+
+Fcon = [Fcon, [F, Z'; Z, X] >= 0];
+
+% Objective
+obj = trace(G' * QT * G * W) - trace( F * (RT + H'*QT*H)^(-1) );
+
+%% Solve
+options = sdpsettings('solver','mosek','verbose',1);
+sol = optimize(Fcon, -obj, options);
+if sol.problem
+    disp(sol.info);
+else
+    W_opt  = value(W);
+    V_opt  = value(V);
+    M_opt  = value(M);
+    F_opt  = value(F);
+    Ex0_opt= value(Ex0);
+    Ew_opt = value(Ew);
+    Ev_opt = value(Ev);
+    fprintf("Optimal value = %g\n", value(obj));
+end
+
+
+function A = random_psd_matrix(n, lambda_min, lambda_max)
+% Generate a symmetric positive definite matrix with eigenvalues in [lambda_min, lambda_max]
+    Q = orth(randn(n));
+    D = diag(lambda_min + (lambda_max - lambda_min) * rand(n,1));
+    A = Q * D * Q';
+end
