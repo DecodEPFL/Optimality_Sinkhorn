@@ -1,4 +1,4 @@
-function cost = Sinkhorn_conic(T, n, m, p, rho, eps, X0h, Wh, Vh, H, G, D, QT, RT, S)
+function [cost, Ws, Vs] = Sinkhorn_conic(T, n, m, p, rho, eps, X0h, Wh, Vh, H, G, D, QT, RT, S)
     % Decision variables
     for t = 1:T+1
         Wblocks{t} = sdpvar(n,n);
@@ -16,11 +16,16 @@ function cost = Sinkhorn_conic(T, n, m, p, rho, eps, X0h, Wh, Vh, H, G, D, QT, R
 
     % Constraints
     % Positive definitiness 
-    Fcon = [F  >= 0, Ex0 >= 0, Wblocks{1} >= 0];
+    Fcon = [F >= 0, Ex0 >= 0, Wblocks{1} >= 0];
     
     for t = 1:T
         Fcon = [Fcon, Ew(:,:,t) >= 0, Ev(:,:,t) >= 0, Vblocks{t} >= 0, Wblocks{t+1} >= 0];
     end
+    % Fcon = [F >= 0, Ex0 >= 0, Wblocks{1} >= min(eig(X0h))*eye(n)];
+    % 
+    % for t = 1:T
+    %     Fcon = [Fcon, Ew(:,:,t) >= 0, Ev(:,:,t) >= 0, Vblocks{t} >= min(eig(Vh{t}))*eye(p), Wblocks{t+1} >= min(eig(Wh{t}))*eye(n)];
+    % end
     
     % Linearization using Schur's complement of the nonlinear part: Ez^2 <= \hat{Z}^1/2 Z \hat{Z}^1/2
     Fcon = [Fcon, [sqrtm(X0h) * Wblocks{1} * sqrtm(X0h) + eps^2/16 * eye(n), Ex0; Ex0, eye(n)] >= 0];
@@ -69,6 +74,8 @@ function cost = Sinkhorn_conic(T, n, m, p, rho, eps, X0h, Wh, Vh, H, G, D, QT, R
     options = sdpsettings('solver','mosek','verbose',0);
     sol = optimize(Fcon, -obj, options);
     cost = value(obj);
+    Ws = value(W);
+    Vs = value(V);
 
     if ~(sol.problem == 0)
         if sol.problem == 1
