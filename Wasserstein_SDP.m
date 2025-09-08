@@ -1,4 +1,4 @@
-function [cost, W_opt, V_opt] = Wasserstein_SDP(T, n, m, p, rho, X0h, Wh, Vh, H, G, D, QT, RT)
+function [cost, W_opt, V_opt, M] = Wasserstein_SDP(T, n, m, p, rho, X0h, Wh, Vh, H, G, D, QT, RT)
     % This function computes the Wasserstein cost for the Distributionally
     % Robust LQG
     
@@ -71,4 +71,5 @@ function [cost, W_opt, V_opt] = Wasserstein_SDP(T, n, m, p, rho, X0h, Wh, Vh, H,
         V_opt  = value(V);
     end
     cost = value(obj);
+    M = value(M);
 end
