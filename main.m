@@ -3,15 +3,18 @@ rng(1234);
 % g = [0.4660, 0.6740, 0.1880];
 % r = [0.8500, 0.3250, 0.0980];
 %% Parameters
-rho = 1000;
-eps = 1;
+rho_0 = 20;
+rho_w = 0.2;
+rho_v = 20;
+% rho = 1e-7;
+eps = 1e-2;
 T = 25;
-n = 2; m = 2; p = 2;
+n = 2; m = 1; p = 2;
 A = [1.1 0.1 ; 0 1.1];
-B = eye(m);
+B = [1; 1];
 C = [1 0; 0 1];
 Q = eye(n);
-R = 1e-3*eye(m);
+R = eye(m);
 S = eye(n);
 
 % nominal covariances
@@ -19,20 +22,20 @@ Wh = cell(T,1);
 Vh = cell(T,1);
 for t = 1:T
     Wh{t} = eye(n);
-    Vh{t} = eye(p);
+    Vh{t} = .1^2*eye(p);
 end
 X0h = eye(n);
 
 % check if the ambiguity sets are possibly empty
 bar_rho_x0 = (eps/2) * ( trace( S \ (X0h + (eps/2)*eye(n)) ) - n + log(det(S)) - n * log(eps/2) );
-if rho < bar_rho_x0
-    error("Unfeasible problem. Increase the radius or decrease the regularizer...")
+if rho_0 < bar_rho_x0
+    error("Unfeasible problem. Increase the radius rho_0 or decrease the regularizer...")
 end
 
 for t=1:T
     bar_rho_w = (eps/2) * ( trace( S \ (Wh{t} + (eps/2)*eye(n)) ) - n + log(det(S)) - n * log(eps/2) );
     bar_rho_v = (eps/2) * ( trace( S \ (Vh{t} + (eps/2)*eye(n)) ) - n + log(det(S)) - n * log(eps/2) );
-    if rho < bar_rho_w || rho < bar_rho_v
+    if rho_w < bar_rho_w || rho_v < bar_rho_v
         error("Unfeasible problem. Increase the radius or decrease the regularizer...")
     end
 end
@@ -67,11 +70,18 @@ end
 CT = kron(pattern, C); 
 
 D = CT * G;
-
+% K = compute_finite_horizon_lqr_gains(A, B, Q, R, T);
+% L = finite_horizon_kalman_gains(A, C, Wh, Vh, X0h, T);
+% x0 = zeros(n, 1);
+% % U_LQG = compute_finite_horizon_lqr_gains(A, B, Q, R, T);
+% cost = 0;
+% for i = 1:10000
+%     [~, ~, cost_t] = simulate_lqg(T, A, B, C, K, L, x0, Wh, Vh, Q, R);
+%     cost = cost + cost_t;
+% end
+% cost = cost/10000;
 % [cost_w, Ww, Vw, M] = Wasserstein_SDP(T, n, m, p, rho, X0h, Wh, Vh, H, G, D, QT, RT);
-% disp(costW)
-[cost_s, Ws, Vs] = Sinkhorn_conic(T, n, m, p, rho, eps, X0h, Wh, Vh, H, G, D, QT, RT, S);
-% % disp(costS)
+[cost_s, Ws, Vs] = Sinkhorn_conic(T, n, m, p, rho_0, rho_w, rho_v, eps, X0h, Wh, Vh, H, G, D, QT, RT, S);
 % U_W = -(RT + H'*QT *H) \ (H'*QT*G*Ww*D' + M/2) / (D * Ww * D' + Vw);
 %% SLS formulation to get the maps from noise to state and input 
 sls.A = kron(eye(T+1), A);
@@ -94,8 +104,8 @@ nom = struct();
 rob = struct();
 
 %% Worst-case performance
-load U_LQG25.mat
-[~, W_wc, V_wc] = compute_WC_LQG(U_LQG25, H, G, D, X0h, Wh, Vh, T, n, p, rho, QT, RT, S, eps);
+load U_LQG25B.mat
+[~, W_wc, V_wc] = compute_WC_LQG(U_LQG, H, G, D, X0h, Wh, Vh, T, n, p, rho_0, rho_w, rho_v, QT, RT, S, eps);
 
 for i=1:mc_tests
     % sample from the worst-case Gaussian
@@ -134,6 +144,7 @@ h2.FaceAlpha = 0.5;
 % Add vertical lines at the means
 % maxCount = max(max(h1.Values), max(h2.Values));       % maximum bin count
 % ylim([0, 1+maxCount]);
+xlim([0, prctile([nom.cost_wc rob.cost_wc], 99)]);
 
 p1 = plot([mu_nom mu_nom], ylim, 'r:', 'LineWidth', 2);
 p2 = plot([mu_rob mu_rob], ylim, 'g:', 'LineWidth', 2);
@@ -185,6 +196,7 @@ h2.FaceAlpha = 0.5;
 % Add vertical lines at the means
 maxCount = max(max(h1.Values), max(h2.Values));       % maximum bin count
 ylim([0, 1+maxCount]);
+% xlim([0, prctile([nom.cost_wc rob.cost_wc], 99)]);
 
 p1 = plot([mu_nom mu_nom], ylim, 'r:', 'LineWidth', 2);
 p2 = plot([mu_rob mu_rob], ylim, 'g:', 'LineWidth', 2);
@@ -196,7 +208,7 @@ ax.FontSize = 6;
 set(gcf, 'PaperPositionMode', 'auto');
 % Legend
 legend([h1 h2], {'LQG', 'Sinkhorn DR LQG'}, 'Interpreter', 'latex', 'Location','best', 'FontSize', 6);
-xlim([0 250]);
+xlim([0, prctile([nom.cost_on rob.cost_on], 99)]);
 exportgraphics(gcf, 'on_policy.pdf', 'ContentType', 'vector');
 
 %% Auxiliary functions
@@ -246,7 +258,7 @@ function [Phi_xx, Phi_xy, Phi_ux, Phi_uy, cost] = causal_unconstrained_h2(m, p, 
     cost = value(objective);
 end
 
-function [cost, W_opt, V_opt] = compute_WC_LQG(U_star, H, G, D, X0h, Wh, Vh, T, n, p, rho, Q, R, S, eps)
+function [cost, W_opt, V_opt] = compute_WC_LQG(U_star, H, G, D, X0h, Wh, Vh, T, n, p, rho_0, rho_w, rho_v, Q, R, S, eps)
 % This function computes the WC covariances in the Sinkhorn ambiguity set
 % given the optimal feedback U_star of the LQG nominal problem
     % Decision variables
@@ -282,14 +294,14 @@ function [cost, W_opt, V_opt] = compute_WC_LQG(U_star, H, G, D, X0h, Wh, Vh, T, 
     end
 
     Fcon = [Fcon, trace( Wblocks{1} + .5 * eps * (S \ Wblocks{1}) - 2*Ex0 ) - eps / 2 * n * log(geomean(Ex0 - eps/4*eye(n))) <= ...
-                  rho - trace(X0h) - eps/2 * (logdet(S) + logdet(X0h)) + .5 * eps * n * log(.5*eps)];
+                  rho_0 - trace(X0h) - eps/2 * (logdet(S) + logdet(X0h)) + .5 * eps * n * log(.5*eps)];
 
     for t = 1:T
         Fcon = [Fcon, trace( Wblocks{t+1} + .5 * eps * (S \ Wblocks{t+1}) - 2*Ew(:,:,t) ) - eps / 2 * n * log(geomean(Ew(:,:,t) - eps/4*eye(n))) <= ...
-                  rho - trace(Wh{t}) - eps/2 * (logdet(S) + logdet(Wh{t})) + .5 * eps * n * log(.5*eps)];
+                  rho_w - trace(Wh{t}) - eps/2 * (logdet(S) + logdet(Wh{t})) + .5 * eps * n * log(.5*eps)];
             
         Fcon = [Fcon, trace( Vblocks{t} + .5 * eps * (S \ Vblocks{t}) - 2*Ev(:,:,t) ) - eps / 2 * p * log(geomean(Ev(:,:,t) - eps/4*eye(p))) <= ...
-                  rho - trace(Vh{t}) - eps/2 * (logdet(S) + logdet(Vh{t})) + .5 * eps * n * log(.5*eps)];
+                  rho_v - trace(Vh{t}) - eps/2 * (logdet(S) + logdet(Vh{t})) + .5 * eps * n * log(.5*eps)];
     end
 
     M = R + H'*Q*H;

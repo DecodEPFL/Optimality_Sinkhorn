@@ -1,4 +1,4 @@
-function [cost, Ws, Vs] = Sinkhorn_conic(T, n, m, p, rho, eps, X0h, Wh, Vh, H, G, D, QT, RT, S)
+function [cost, Ws, Vs] = Sinkhorn_conic(T, n, m, p, rho_0, rho_w, rho_v, eps, X0h, Wh, Vh, H, G, D, QT, RT, S)
     % Decision variables
     for t = 1:T+1
         Wblocks{t} = sdpvar(n,n);
@@ -42,14 +42,17 @@ function [cost, Ws, Vs] = Sinkhorn_conic(T, n, m, p, rho, eps, X0h, Wh, Vh, H, G
     end
     
     Fcon = [Fcon, trace( Wblocks{1} + .5 * eps * (S \ Wblocks{1}) - 2*Ex0 ) - eps / 2 * n * log(geomean(Ex0 - eps/4*eye(n))) <= ...
-                  rho - trace(X0h) - eps/2 * (logdet(S) + logdet(X0h)) + .5 * eps * n * log(.5*eps)];
+                  rho_0 - trace(X0h) - eps/2 * (logdet(S) + logdet(X0h)) + .5 * eps * n * log(.5*eps)];
+
+     % Fcon = [Fcon, trace( Wblocks{1} + .5 * eps * (S \ Wblocks{1}) - 2*Ex0 ) - eps / 2 * n * log(geomean(Ex0 - eps/4*eye(n))) <= ...
+     %              rho_0 - trace(X0h) - eps/2 * (logdet(S) + logdet(X0h)) + .5 * eps * n * log(.5*eps)];
 
     for t = 1:T
         Fcon = [Fcon, trace( Wblocks{t+1} + .5 * eps * (S \ Wblocks{t+1}) - 2*Ew(:,:,t) ) - eps / 2 * n * log(geomean(Ew(:,:,t) - eps/4*eye(n))) <= ...
-                  rho - trace(Wh{t}) - eps/2 * (logdet(S) + logdet(Wh{t})) + .5 * eps * n * log(.5*eps)];
+                  rho_w - trace(Wh{t}) - eps/2 * (logdet(S) + logdet(Wh{t})) + .5 * eps * n * log(.5*eps)];
             
         Fcon = [Fcon, trace( Vblocks{t} + .5 * eps * (S \ Vblocks{t}) - 2*Ev(:,:,t) ) - eps / 2 * p * log(geomean(Ev(:,:,t) - eps/4*eye(p))) <= ...
-                  rho - trace(Vh{t}) - eps/2 * (logdet(S) + logdet(Vh{t})) + .5 * eps * n * log(.5*eps)];
+                  rho_v - trace(Vh{t}) - eps/2 * (logdet(S) + logdet(Vh{t})) + .5 * eps * n * log(.5*eps)];
     end
 
     W = blkdiag(Wblocks{:});
