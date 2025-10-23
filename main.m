@@ -152,6 +152,8 @@ ylabel('Frequency', 'Interpreter', 'latex', 'FontSize', 8);
 xlabel('$J(\pi, \delta)$', 'Interpreter', 'latex', 'FontSize', 8);
 ax = gca;   
 ax.FontSize = 6;
+ax.XAxis.Exponent = 3;  % force scientific notation with ×10^3
+ax.TickLabelInterpreter = 'tex';  % ensures nice formatting
 % Legend
 legend([h1 h2], {'LQG', 'Sinkhorn DR LQG'}, 'Interpreter', 'latex', 'Location','best', 'FontSize', 6);
 % set(gca,'YScale','log');
@@ -204,6 +206,8 @@ ylabel('Frequency', 'Interpreter', 'latex', 'FontSize', 8);
 xlabel('$J(\pi, \delta)$', 'Interpreter', 'latex', 'FontSize', 8);
 ax = gca;   
 ax.FontSize = 6;
+ax.XAxis.Exponent = 3;  % force scientific notation with ×10^3
+ax.TickLabelInterpreter = 'tex';  % ensures nice formatting
 % set(gca,'XScale','log');
 set(gcf, 'PaperPositionMode', 'auto');
 % Legend
